@@ -1,0 +1,37 @@
+[project]
+name = "imobsim"
+version = "0.1.0"
+description = "Modelo de estoque e fluxo para testar se 'obra de hoje paga com lançamento de agora' fecha sob diferentes cenários macro e praças — estudo pessoal, NÃO é previsão"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Davi Janisch Maia" }]
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    "pandas>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E701", "E702"]  # `a; b` na mesma linha é usado de propósito nos gráficos
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["imobsim"]

@@ -1,0 +1,17 @@
+# Saída da simulação (regenerável com `python run.py`); as figuras do README ficam em docs/
+out/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# macOS / editores
+.DS_Store
+.idea/
+.vscode/
