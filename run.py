@@ -1,12 +1,14 @@
 """Roda a grade completa e gera resumo + gráficos.
 
     python run.py [--meses 48] [--out ./out] [--macros focus_base historico:2014-01 ...]
+    python run.py --stress          # stress test com as crises históricas (crises.py)
 
 Sem `--macros`, usa os três cenários estilizados do estudo original.
 """
 from __future__ import annotations
 
 import argparse
+import itertools
 import pathlib
 
 import matplotlib
@@ -16,14 +18,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from imobsim import ARQUETIPOS, CENARIOS, PRACAS, grade, resumo, vso_minima
+from imobsim import (
+    ARQUETIPOS,
+    CENARIOS,
+    EPISODIOS,
+    PRACAS,
+    grade,
+    grade_stress,
+    resumo,
+    resumo_stress,
+    vso_minima,
+)
 
 CORES_FIXAS = {"benigno": "#2a9d8f", "focus_base": "#264653", "fiscal_adverso": "#e76f51"}
-PALETA = ["#264653", "#e76f51", "#2a9d8f", "#e9c46a", "#8d99ae", "#6a4c93", "#f4a261"]
+PALETA = ["#e9c46a", "#8d99ae", "#6a4c93", "#f4a261", "#219ebc", "#9b2226", "#606c38"]
 
 
 def cores(macros):
-    extra = iter(c for c in PALETA if c not in CORES_FIXAS.values())
+    extra = itertools.cycle(PALETA)
     return {m: CORES_FIXAS.get(m) or next(extra) for m in macros}
 
 
@@ -99,6 +111,54 @@ def fig_fronteira(macros, out, meses):
     plt.close(fig)
 
 
+def fig_stress(res, tab, out):
+    """Mapa arquétipo x episódio (mês relativo da quebra) e caixa de cada arquétipo
+    em Lajeado sob cada episódio."""
+    eps = list(EPISODIOS)
+    arqs = list(ARQUETIPOS)
+    pracas = list(PRACAS)
+    fig, axes = plt.subplots(1, len(pracas), figsize=(6.8 * len(pracas), 3.6))
+    axes = np.atleast_1d(axes)
+    for ax, praca in zip(axes, pracas):
+        mat = np.full((len(arqs), len(eps)), np.nan)
+        for i, a in enumerate(arqs):
+            for j, e in enumerate(eps):
+                mat[i, j] = res[(e, praca, a)].attrs["insolvente_em"] or np.nan
+        show = np.where(np.isnan(mat), np.nanmax(mat) + 12, mat)
+        ax.imshow(show, cmap="RdYlGn", vmin=0, vmax=np.nanmax(mat) + 12, aspect="auto")
+        for i in range(len(arqs)):
+            for j in range(len(eps)):
+                txt = "sobrevive" if np.isnan(mat[i, j]) else f"mês {int(mat[i, j])}"
+                ax.text(j, i, txt, ha="center", va="center", fontsize=8)
+        ax.set_xticks(range(len(eps)))
+        ax.set_xticklabels([f"{e}\n({EPISODIOS[e].encaixe})" for e in eps], fontsize=7)
+        ax.set_yticks(range(len(arqs))); ax.set_yticklabels(arqs, fontsize=8)
+        ax.set_title(praca)
+    fig.suptitle("Stress test: mês da insolvência sob cada crise histórica "
+                 "(praça de hoje, macro e choques da época)")
+    fig.tight_layout()
+    fig.savefig(out / "stress_crises.png", dpi=130)
+    plt.close(fig)
+
+    cor = cores(eps)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
+    for ax, arq in zip(axes, arqs):
+        for e in eps:
+            df = res[(e, "lajeado", arq)]
+            y = df["inc_caixa_liquido"] / 1e6
+            ax.plot(df["t"], y, color=cor[e], lw=2, label=e)
+            ins = df.attrs["insolvente_em"]
+            if ins is not None:
+                ax.scatter([ins], [y.iloc[ins]], color=cor[e], marker="x", s=80, zorder=5)
+        ax.axhline(0, color="k", lw=0.8, ls="--")
+        ax.set_title(arq); ax.set_xlabel("meses desde o início do episódio"); ax.grid(alpha=0.3)
+    axes[0].set_ylabel("caixa líquido (R$ MM)"); axes[0].legend(fontsize=8)
+    fig.suptitle("Lajeado: caixa de cada arquétipo sob cada crise (x = insolvência)")
+    fig.tight_layout()
+    fig.savefig(out / "stress_caixa_lajeado.png", dpi=130)
+    plt.close(fig)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -106,13 +166,24 @@ def main():
     ap.add_argument("--out", default="out")
     ap.add_argument("--macros", nargs="+", default=list(CENARIOS),
                     help="cenários: nome estilizado, historico:YYYY-MM ou focus:YYYY-MM-DD")
+    ap.add_argument("--stress", action="store_true",
+                    help="em vez da grade, roda o stress test com as crises históricas")
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    pd.set_option("display.width", 220)
+
+    if a.stress:
+        res = grade_stress()
+        tab = resumo_stress(res)
+        tab.to_csv(out / "stress_crises.csv", index=False)
+        print(tab.round(1).to_string(index=False))
+        fig_stress(res, tab, out)
+        print(f"\nstress em {out.resolve()}")
+        return
 
     res = grade(a.meses, macros=a.macros)
     tab = resumo(res)
     tab.to_csv(out / "resumo_grade.csv", index=False)
-    pd.set_option("display.width", 220)
     print(tab.round(1).to_string(index=False))
 
     for p in PRACAS:

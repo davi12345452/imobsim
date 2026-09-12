@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import itertools
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,34 @@ def _monta(nome_macro, nome_praca: str, nome_arq: str, meses: int):
     return macro, praca, arq
 
 
+@dataclass(frozen=True)
+class Choque:
+    """Intervenção exógena em um mês da simulação.
+
+    Multiplica (ou fixa, se `valor` for dado) um atributo da praça ou do
+    arquétipo. É como os episódios de crise entram no modelo: recessão é
+    `renda_comprador` x 0.95, restrição de crédito é `entrada_pct` x 1.5,
+    fechamento da linha bancária é `limite_credito` x 0, e assim por diante.
+    """
+    mes: int
+    alvo: str          # "praca" | "arquetipo"
+    campo: str
+    fator: float = 1.0
+    valor: float | None = None
+    nota: str = ""
+
+    def aplicar(self, praca, arq):
+        obj = {"praca": praca, "arquetipo": arq}[self.alvo]
+        atual = getattr(obj, self.campo)
+        setattr(obj, self.campo, self.valor if self.valor is not None else atual * self.fator)
+
+
+def _aplicar_choques(choques, t, praca, arq):
+    for c in choques:
+        if c.mes == t:
+            c.aplicar(praca, arq)
+
+
 def _vso_praca(praca, macro_t) -> tuple[float, float]:
     """VSO da praça com o estoque do início do mês (antes da construtora agir)."""
     dem, sa = praca.demanda(macro_t)
@@ -34,11 +63,14 @@ def _vso_praca(praca, macro_t) -> tuple[float, float]:
 
 
 def run(nome_macro, nome_praca: str, nome_arq: str, meses: int = 48,
-        choque_confianca_quebra: float = 0.25) -> pd.DataFrame:
+        choque_confianca_quebra: float = 0.25,
+        choques: Iterable[Choque] = ()) -> pd.DataFrame:
     """Simula uma combinação (macro, praça, arquétipo) por `meses` meses.
 
     `nome_macro` aceita tudo que `macro.cenario` aceita: "focus_base",
     "historico:2014-01", "focus:2026-09-04", um callable ou um DataFrame.
+    `choques` são intervenções exógenas (ver `Choque`) aplicadas no início do
+    mês indicado, antes de a praça calcular a demanda.
 
     Quando a construtora quebra, a praça recebe um choque único de confiança
     (`choque_confianca_quebra`): obra parada na cidade afeta a demanda de todos.
@@ -49,8 +81,10 @@ def run(nome_macro, nome_praca: str, nome_arq: str, meses: int = 48,
 
     linhas = []
     choque_aplicado = False
+    choques = list(choques)
     for t in range(meses):
         m = macro.iloc[t]
+        _aplicar_choques(choques, t, praca, arq)
         vso, sa = _vso_praca(praca, m)
         r_inc = inc.step(t, m, vso, sa, praca)
         choque = 0.0
