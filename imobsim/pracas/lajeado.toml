@@ -1,0 +1,18 @@
+# Lajeado (RS): cidade média do interior, comprador local financiado,
+# degrau de demanda das famílias realocadas pela enchente de 2024.
+ordem = 1
+nome = "Lajeado"
+preco_m2 = 8103.0                # Brain/Sinduscon VT, 4T25
+metragem_media = 58.0            # produto encolhendo p/ caber na renda
+renda_comprador = 13500.0        # família que compra o ticket de ~R$ 470k
+share_financiado = 0.80
+demanda_base_mensal = 17.0       # fluxo estrutural (Univates, indústria)
+estoque_inicial = 310.0          # ~9-10 meses de venda
+lancamentos_externos_mensal = 18.0
+degrau_inicial = 260.0           # famílias realocadas ainda no mercado
+degrau_meia_vida = 14.0
+sens_cdi = 1.0
+cdi_ref = 10.0
+meses_estoque_alvo = 9.0
+alpha_up = 0.007
+alpha_down = 0.0025              # cidade pequena: histerese alta

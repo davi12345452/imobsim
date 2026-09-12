@@ -2,6 +2,7 @@
 
     python run.py [--meses 48] [--out ./out] [--macros focus_base historico:2014-01 ...]
     python run.py --stress          # stress test com as crises históricas (crises.py)
+    python run.py --pracas lajeado exemplos/cidade_exemplo.toml
 
 Sem `--macros`, usa os três cenários estilizados do estudo original.
 """
@@ -39,6 +40,10 @@ def cores(macros):
     return {m: CORES_FIXAS.get(m) or next(extra) for m in macros}
 
 
+def _rotulo(praca):
+    return pathlib.Path(str(praca)).stem
+
+
 def _mes0(res, praca):
     df = next(iter(v for k, v in res.items() if k[1] == praca))
     return df["mes"].iloc[0]
@@ -61,9 +66,9 @@ def fig_caixa(res, praca, macros, out):
         ax.grid(alpha=0.3)
     axes[0].set_ylabel("caixa líquido da construtora (R$ MM)")
     axes[0].legend(fontsize=8)
-    fig.suptitle(f"{praca}: caixa por arquétipo e cenário macro (x = insolvência)")
+    fig.suptitle(f"{_rotulo(praca)}: caixa por arquétipo e cenário macro (x = insolvência)")
     fig.tight_layout()
-    fig.savefig(out / f"caixa_{praca}.png", dpi=130)
+    fig.savefig(out / f"caixa_{_rotulo(praca)}.png", dpi=130)
     plt.close(fig)
 
 
@@ -82,25 +87,25 @@ def fig_praca(res, praca, macros, out):
     axes[2].set_title("capacidade de compra do financiado (t0 = 100)")
     for ax in axes:
         ax.set_xlabel(f"meses desde {_mes0(res, praca)}"); ax.grid(alpha=0.3)
-    fig.suptitle(f"{praca}: praça sob os cenários (com 1 construtora de fluxo operando)")
+    fig.suptitle(f"{_rotulo(praca)}: praça sob os cenários (com 1 construtora de fluxo operando)")
     fig.tight_layout()
-    fig.savefig(out / f"praca_{praca}.png", dpi=130)
+    fig.savefig(out / f"praca_{_rotulo(praca)}.png", dpi=130)
     plt.close(fig)
 
 
-def fig_fronteira(macros, out, meses):
+def fig_fronteira(macros, pracas, out, meses):
     cor = cores(macros)
     grid = np.round(np.arange(1.0, 3.01, 0.1), 2)
-    fig, axes = plt.subplots(1, len(PRACAS), figsize=(6.5 * len(PRACAS), 4.2), sharey=True)
+    fig, axes = plt.subplots(1, len(pracas), figsize=(6.5 * len(pracas), 4.2), sharey=True)
     axes = np.atleast_1d(axes)
-    for ax, praca in zip(axes, PRACAS):
+    for ax, praca in zip(axes, pracas):
         for m in macros:
             r = vso_minima(m, praca, meses=meses, grid=grid)
             y = [r["detalhe"][g] if r["detalhe"][g] is not None else meses for g in grid]
             ax.plot(grid, y, color=cor[m], lw=2, marker="o", ms=3,
                     label=f"{m} (mín. p/ sobreviver: {r['minimo'] or '>3.0'})")
         ax.axhline(meses, color="k", lw=0.8, ls="--")
-        ax.set_title(praca)
+        ax.set_title(_rotulo(praca))
         ax.set_xlabel("velocidade de vendas da construtora / velocidade da praça")
         ax.grid(alpha=0.3); ax.legend(fontsize=8)
     axes[0].set_ylabel(f"mês da insolvência (= {meses}: sobrevive)")
@@ -116,7 +121,7 @@ def fig_stress(res, tab, out):
     em Lajeado sob cada episódio."""
     eps = list(EPISODIOS)
     arqs = list(ARQUETIPOS)
-    pracas = list(PRACAS)
+    pracas = list(dict.fromkeys(k[1] for k in res))
     fig, axes = plt.subplots(1, len(pracas), figsize=(6.8 * len(pracas), 3.6))
     axes = np.atleast_1d(axes)
     for ax, praca in zip(axes, pracas):
@@ -133,7 +138,7 @@ def fig_stress(res, tab, out):
         ax.set_xticks(range(len(eps)))
         ax.set_xticklabels([f"{e}\n({EPISODIOS[e].encaixe})" for e in eps], fontsize=7)
         ax.set_yticks(range(len(arqs))); ax.set_yticklabels(arqs, fontsize=8)
-        ax.set_title(praca)
+        ax.set_title(_rotulo(praca))
     fig.suptitle("Stress test: mês da insolvência sob cada crise histórica "
                  "(praça de hoje, macro e choques da época)")
     fig.tight_layout()
@@ -141,10 +146,11 @@ def fig_stress(res, tab, out):
     plt.close(fig)
 
     cor = cores(eps)
+    p0 = pracas[0]
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
     for ax, arq in zip(axes, arqs):
         for e in eps:
-            df = res[(e, "lajeado", arq)]
+            df = res[(e, p0, arq)]
             y = df["inc_caixa_liquido"] / 1e6
             ax.plot(df["t"], y, color=cor[e], lw=2, label=e)
             ins = df.attrs["insolvente_em"]
@@ -153,9 +159,9 @@ def fig_stress(res, tab, out):
         ax.axhline(0, color="k", lw=0.8, ls="--")
         ax.set_title(arq); ax.set_xlabel("meses desde o início do episódio"); ax.grid(alpha=0.3)
     axes[0].set_ylabel("caixa líquido (R$ MM)"); axes[0].legend(fontsize=8)
-    fig.suptitle("Lajeado: caixa de cada arquétipo sob cada crise (x = insolvência)")
+    fig.suptitle(f"{_rotulo(p0)}: caixa de cada arquétipo sob cada crise (x = insolvência)")
     fig.tight_layout()
-    fig.savefig(out / "stress_caixa_lajeado.png", dpi=130)
+    fig.savefig(out / f"stress_caixa_{_rotulo(p0)}.png", dpi=130)
     plt.close(fig)
 
 
@@ -166,6 +172,8 @@ def main():
     ap.add_argument("--out", default="out")
     ap.add_argument("--macros", nargs="+", default=list(CENARIOS),
                     help="cenários: nome estilizado, historico:YYYY-MM ou focus:YYYY-MM-DD")
+    ap.add_argument("--pracas", nargs="+", default=list(PRACAS),
+                    help="praças: nome em imobsim/pracas/ ou caminho para um .toml")
     ap.add_argument("--stress", action="store_true",
                     help="em vez da grade, roda o stress test com as crises históricas")
     a = ap.parse_args()
@@ -173,7 +181,7 @@ def main():
     pd.set_option("display.width", 220)
 
     if a.stress:
-        res = grade_stress()
+        res = grade_stress(pracas=a.pracas)
         tab = resumo_stress(res)
         tab.to_csv(out / "stress_crises.csv", index=False)
         print(tab.round(1).to_string(index=False))
@@ -181,15 +189,15 @@ def main():
         print(f"\nstress em {out.resolve()}")
         return
 
-    res = grade(a.meses, macros=a.macros)
+    res = grade(a.meses, macros=a.macros, pracas=a.pracas)
     tab = resumo(res)
     tab.to_csv(out / "resumo_grade.csv", index=False)
     print(tab.round(1).to_string(index=False))
 
-    for p in PRACAS:
+    for p in a.pracas:
         fig_caixa(res, p, a.macros, out)
         fig_praca(res, p, a.macros, out)
-    fig_fronteira(a.macros, out, a.meses)
+    fig_fronteira(a.macros, a.pracas, out, a.meses)
     print(f"\ngráficos e resumo em {out.resolve()}")
 
 

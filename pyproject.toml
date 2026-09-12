@@ -5,7 +5,7 @@ description = "Modelo de estoque e fluxo para testar se 'obra de hoje paga com l
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Davi Janisch Maia" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "matplotlib>=3.8",
     "numpy>=1.26",
@@ -20,7 +20,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -37,4 +37,4 @@ build-backend = "setuptools.build_meta"
 packages = ["imobsim"]
 
 [tool.setuptools.package-data]
-imobsim = ["dados/*.csv"]
+imobsim = ["dados/*.csv", "pracas/*.toml"]

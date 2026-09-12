@@ -1,0 +1,17 @@
+# Praça derivada de observáveis públicos. NÚMEROS ILUSTRATIVOS: troque pelos
+# da sua cidade e trate o resultado como ponto de partida, não calibração.
+#
+#   python run.py --pracas exemplos/cidade_exemplo.toml
+#
+nome = "Cidade Exemplo"
+tipo = "interior"                # interior | litoral_investidor | metropole
+
+[dados]
+preco_m2 = 7200.0                # FipeZap ou Sinduscon regional (R$/m² lançamento)
+renda_domiciliar_mediana = 4200.0  # Censo 2022 / PNAD (R$/mês)
+domicilios = 48000               # Censo 2022, domicílios ocupados
+crescimento_domicilios_aa = 0.015  # Censo 2010 -> 2022 anualizado
+degrau_inicial = 0.0             # demanda de evento (ex.: famílias realocadas)
+
+# Campos soltos aqui embaixo sobrescrevem a derivação, ex.:
+# estoque_inicial = 400.0
