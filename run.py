@@ -3,6 +3,7 @@
     python run.py [--meses 48] [--out ./out] [--macros focus_base historico:2014-01 ...]
     python run.py --stress          # stress test com as crises históricas (crises.py)
     python run.py --pracas lajeado exemplos/cidade_exemplo.toml
+    python run.py --mc 200          # Monte Carlo (Selic, INCC, degrau, demanda) no 1º macro
 
 Sem `--macros`, usa os três cenários estilizados do estudo original.
 """
@@ -25,9 +26,12 @@ from imobsim import (
     EPISODIOS,
     PRACAS,
     grade,
+    grade_mc,
     grade_stress,
     resumo,
+    resumo_mc,
     resumo_stress,
+    sigmas_do_focus,
     vso_minima,
 )
 
@@ -165,6 +169,36 @@ def fig_stress(res, tab, out):
     plt.close(fig)
 
 
+def fig_mc(res, out, meses):
+    pracas = list(dict.fromkeys(k[0] for k in res))
+    arqs = list(dict.fromkeys(k[1] for k in res))
+    fig, axes = plt.subplots(len(pracas), len(arqs), figsize=(5 * len(arqs), 3.4 * len(pracas)),
+                             squeeze=False, sharex=True)
+    for i, p in enumerate(pracas):
+        for j, a in enumerate(arqs):
+            ax = axes[i, j]
+            df = res[(p, a)]
+            meses_q = df["insolvente_em"].dropna()
+            ax.hist(meses_q, bins=range(0, meses + 2, 2), color="#e76f51", alpha=0.85)
+            prob = df.attrs["prob_quebra"]
+            ax.text(0.02, 0.92, f"P(quebra em {meses}m) = {prob:.0%}\nn = {len(df)}",
+                    transform=ax.transAxes, va="top", fontsize=9)
+            ax.set_title(f"{_rotulo(p)} · {a}", fontsize=10)
+            ax.set_xlim(0, meses); ax.grid(alpha=0.3)
+            if meses_q.empty:
+                ax.set_ylim(0, 1)
+                ax.text(0.5, 0.45, "nenhuma quebra", transform=ax.transAxes, ha="center",
+                        fontsize=10, color="#2a9d8f")
+            if i == len(pracas) - 1:
+                ax.set_xlabel("mês da insolvência")
+            if j == 0:
+                ax.set_ylabel("rodadas")
+    fig.suptitle("Monte Carlo: Selic, INCC, degrau e demanda base sorteados em torno do cenário")
+    fig.tight_layout()
+    fig.savefig(out / "mc_quebra.png", dpi=130)
+    plt.close(fig)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -176,9 +210,24 @@ def main():
                     help="praças: nome em imobsim/pracas/ ou caminho para um .toml")
     ap.add_argument("--stress", action="store_true",
                     help="em vez da grade, roda o stress test com as crises históricas")
+    ap.add_argument("--mc", type=int, default=0, metavar="N",
+                    help="em vez da grade, roda N amostras de Monte Carlo no primeiro macro")
+    ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     pd.set_option("display.width", 220)
+
+    if a.mc:
+        sig = sigmas_do_focus("2026-09-04")
+        res = grade_mc(a.macros[0], pracas=a.pracas, n=a.mc, seed=a.seed, meses=a.meses,
+                       sigmas=sig)
+        tab = pd.DataFrame([resumo_mc(df) for df in res.values()])
+        tab.to_csv(out / "mc_resumo.csv", index=False)
+        print(f"sigmas: {sig}")
+        print(tab.round(2).to_string(index=False))
+        fig_mc(res, out, a.meses)
+        print(f"\nmonte carlo em {out.resolve()}")
+        return
 
     if a.stress:
         res = grade_stress(pracas=a.pracas)

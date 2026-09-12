@@ -80,7 +80,8 @@ imobsim/incorporadora.py  obras, caixa (pool ou afetação), plano empresário,
 imobsim/sim.py            loop mensal, grade de cenários, fronteiras
 imobsim/fontes.py         SGS e Focus (BCB) com snapshot offline em imobsim/dados/
 imobsim/crises.py         episódios históricos (macro + choques) para stress test
-run.py                    gera CSV + gráficos em ./out; --stress roda as crises
+imobsim/montecarlo.py     Selic, INCC, degrau e demanda sorteados em torno de um cenário
+run.py                    gera CSV + gráficos em ./out; --stress e --mc N
 ```
 
 Trocar praça, macro ou arquétipo é trocar um objeto. Lajeado e Balneário
@@ -304,6 +305,51 @@ Limite importante: a praça é sempre a de hoje (preço, renda, estoque de
 2015", é "Lajeado de hoje se 2015 se repetisse". Os choques são
 estilizações grosseiras de séries públicas, para ordem de grandeza.
 
+## Monte Carlo: quanto o resultado depende da premissa
+
+Os cenários são determinísticos. `montecarlo.py` sorteia, em torno de um
+cenário, as quatro premissas mais incertas: Selic e INCC como passeio
+aleatório com dispersão tirada do desvio-padrão do Focus para o ano
+seguinte, e `degrau_inicial` e `demanda_base_mensal` como lognormais
+(log-desvio de 0,3 e 0,15). O arquétipo não é sorteado: a pergunta é "dado
+este balanço, qual a chance de o mundo quebrá-lo".
+
+```bash
+python run.py --mc 200            # docs/mc_resumo.csv e mc_quebra.png, ~3 s
+```
+
+```python
+from imobsim import monte_carlo, resumo_mc, Sigmas, sigmas_do_focus
+mc = monte_carlo("focus_base", "lajeado", "intermediaria", n=500, sigmas=sigmas_do_focus("2026-09-04"))
+mc.attrs["prob_quebra"]; resumo_mc(mc)          # quantis do mês e sensibilidade por fator
+monte_carlo("benigno", "lajeado", "fluxo_dependente", sigmas=Sigmas(selic_12m=2.0, degrau=0.5))
+```
+
+![Monte Carlo: distribuição do mês de quebra](docs/mc_quebra.png)
+
+Com 200 amostras no cenário Focus (`docs/mc_resumo.csv`):
+
+| Praça | Arquétipo | P(quebra em 48 m) | mês da quebra (p10 / p50 / p90) | sensibilidade: Selic | degrau | demanda |
+|---|---|---|---|---|---|---|
+| Lajeado | `fluxo_dependente` | 97% | 18 / 20 / 30 | −0,22 | +0,56 | +0,69 |
+| Lajeado | `intermediaria` | 47% | 20 / 20 / 23 | −0,13 | +0,58 | +0,66 |
+| Lajeado | `capitalizada` | 0% | — | — | — | — |
+| Balneário Camboriú | `fluxo_dependente` | 97% | 8 / 16 / 18 | −0,16 | 0 | +0,94 |
+| Balneário Camboriú | `intermediaria` | 98% | 17 / 20 / 20 | −0,26 | 0 | +0,80 |
+
+Sensibilidade é a correlação de postos entre o fator sorteado e o mês da
+quebra (positivo = adia). Duas leituras:
+
+1. **A demanda da praça pesa três vezes mais que a Selic.** Para a
+   construtora de fluxo, o que decide o mês é quantas famílias aparecem
+   (demanda base e degrau), não a taxa. É o argumento do estudo em forma de
+   número: calibrar `demanda_base_mensal` e `degrau_inicial` vale mais que
+   discutir cenário macro.
+2. **A intermediária em Lajeado é a única rodada de moeda no ar** (47%). No
+   cenário determinístico ela quebra em ago/2028 por pouco; a incerteza da
+   demanda joga metade das rodadas para o lado de sobreviver. As outras
+   combinações estão longe da fronteira em qualquer direção.
+
 ## Parâmetros que mais movem o resultado (calibrar primeiro)
 
 - `Praca.demanda_base_mensal` e `estoque_inicial` — definem a VSO de partida.
@@ -330,8 +376,10 @@ estilizações grosseiras de séries públicas, para ordem de grandeza.
   confiança na praça quando ela quebra.
 - Comprador homogêneo por praça (uma renda, uma lógica de aprovação).
 - Não há mercado secundário nem aluguel.
-- Determinístico. Monte Carlo sobre Selic, INCC e degrau é o próximo passo
-  natural (usar a dispersão do Focus como prior).
+- O Monte Carlo sorteia as quatro premissas de forma independente; choques
+  correlacionados (Selic sobe E renda cai) só entram via `crises.py`.
+- Arquétipos continuam hardcoded em `incorporadora.py`; passar para TOML
+  como as praças é o próximo passo natural.
 - Parâmetros de praça são estimativas a partir das fontes acima, não dados
   primários. A derivação por `from_dados` dá ordem de grandeza; estoque e
   VSO de cidade pequena continuam sendo premissa.

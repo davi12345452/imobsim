@@ -1,6 +1,6 @@
 [project]
 name = "imobsim"
-version = "0.1.0"
+version = "0.2.0"
 description = "Modelo de estoque e fluxo para testar se 'obra de hoje paga com lançamento de agora' fecha sob diferentes cenários macro e praças — estudo pessoal, NÃO é previsão"
 readme = "README.md"
 license = { file = "LICENSE" }
