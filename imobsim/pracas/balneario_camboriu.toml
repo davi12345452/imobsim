@@ -1,0 +1,17 @@
+# Balneário Camboriú (SC): praça de investidor, comprador de fora, à vista,
+# compara com o CDI. Torres longas: estoque estrutural alto.
+ordem = 2
+nome = "Balneario Camboriu"
+preco_m2 = 15343.0               # FipeZap set/2026
+metragem_media = 85.0
+renda_comprador = 35000.0        # comprador de fora, alta renda
+share_financiado = 0.30
+demanda_base_mensal = 90.0
+estoque_inicial = 1600.0         # ~18 meses (torres longas)
+lancamentos_externos_mensal = 80.0
+degrau_inicial = 0.0
+sens_cdi = 6.0                   # investidor compara com CDI
+cdi_ref = 10.0
+meses_estoque_alvo = 15.0
+alpha_up = 0.005
+alpha_down = 0.005               # mais liquidez, desconto aparece

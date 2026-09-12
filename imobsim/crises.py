@@ -236,7 +236,7 @@ def episodio(spec: str | Episodio) -> Episodio:
         raise KeyError(f"episódio desconhecido: {spec!r}. Use um de {list(EPISODIOS)}") from None
 
 
-def stress(nome_arq: str, nome_praca: str, ep: str | Episodio, meses: int | None = None,
+def stress(nome_arq: str, nome_praca, ep: str | Episodio, meses: int | None = None,
            com_choques: bool = True) -> pd.DataFrame:
     """Roda `nome_arq` em `nome_praca` sob o episódio. `com_choques=False` isola
     o efeito do caminho macro puro."""
@@ -249,7 +249,7 @@ def stress(nome_arq: str, nome_praca: str, ep: str | Episodio, meses: int | None
 
 
 def grade_stress(episodios: Iterable[str | Episodio] | None = None,
-                 pracas: Iterable[str] | None = None,
+                 pracas: Iterable | None = None,
                  arqs: Iterable[str] | None = None,
                  com_choques: bool = True) -> dict[tuple, pd.DataFrame]:
     eps = [episodio(e) for e in (episodios or EPISODIOS.values())]

@@ -14,7 +14,9 @@ alto (ninguém baixa tabela, dá desconto no balcão).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import pathlib
+import tomllib
+from dataclasses import dataclass, field, fields, replace
 
 import numpy as np
 
@@ -123,46 +125,152 @@ class Praca:
 
 
 # ---------------------------------------------------------------------------
-# Configs de praça com os números levantados até aqui
+# Praças a partir de arquivo (TOML) e de observáveis públicos
 # ---------------------------------------------------------------------------
 
-def lajeado() -> Praca:
-    return Praca(
-        nome="Lajeado",
-        preco_m2=8_103.0,            # Brain/Sinduscom VT, 4T25
-        metragem_media=58.0,         # produto encolhendo p/ caber na renda
-        renda_comprador=13_500.0,    # família que compra o ticket de ~R$ 470k
-        share_financiado=0.80,
-        demanda_base_mensal=17.0,    # fluxo estrutural (Univates, indústria)
-        estoque_inicial=310.0,       # ~9-10 meses de venda
-        lancamentos_externos_mensal=18.0,
-        degrau_inicial=260.0,        # famílias realocadas ainda no mercado
-        degrau_meia_vida=14.0,
-        sens_cdi=1.0,
-        cdi_ref=10.0,
-        meses_estoque_alvo=9.0,
-        alpha_up=0.007,
-        alpha_down=0.0025,           # cidade pequena: histerese alta
+PRACAS_DIR = pathlib.Path(__file__).parent / "pracas"
+_CAMPOS_INIT = {f.name for f in fields(Praca) if f.init}
+
+# Tipo de praça: o que define QUAL canal macro morde e como o preço reage.
+# Os campos "derivacao" só são usados por Praca.from_dados.
+TEMPLATES: dict[str, dict] = {
+    "interior": dict(
+        # cidade média do interior: comprador local, financiado, produto encolhe p/ caber na renda
+        share_financiado=0.80, sens_cdi=1.0, cdi_ref=10.0, meses_estoque_alvo=9.0,
+        alpha_up=0.007, alpha_down=0.0025, passthrough_incc=0.5,
+        comprometimento_max=0.30, entrada_pct=0.20,
+        derivacao=dict(metragem_media=58.0, mult_renda=3.0, share_novos=0.40,
+                       fator_externos=1.05),
+    ),
+    "litoral_investidor": dict(
+        # capital/litoral de investidor: comprador de fora, à vista, compara com CDI
+        share_financiado=0.30, sens_cdi=6.0, cdi_ref=10.0, meses_estoque_alvo=15.0,
+        alpha_up=0.005, alpha_down=0.005, passthrough_incc=0.5,
+        comprometimento_max=0.30, entrada_pct=0.20,
+        derivacao=dict(metragem_media=85.0, mult_renda=6.0, share_novos=0.45,
+                       fator_externos=0.90),
+    ),
+    "metropole": dict(
+        # capital grande: mistura de financiado e investidor, mercado líquido
+        share_financiado=0.60, sens_cdi=3.0, cdi_ref=10.0, meses_estoque_alvo=12.0,
+        alpha_up=0.006, alpha_down=0.004, passthrough_incc=0.5,
+        comprometimento_max=0.30, entrada_pct=0.20,
+        derivacao=dict(metragem_media=65.0, mult_renda=3.5, share_novos=0.40,
+                       fator_externos=1.00),
+    ),
+}
+
+
+def _valida_campos(d: dict, origem: str):
+    extras = set(d) - _CAMPOS_INIT
+    if extras:
+        raise ValueError(f"{origem}: campos desconhecidos {sorted(extras)}. "
+                         f"Válidos: {sorted(_CAMPOS_INIT)}")
+
+
+def from_dados(nome: str, tipo: str, preco_m2: float, renda_domiciliar_mediana: float,
+               domicilios: float, crescimento_domicilios_aa: float,
+               degrau_inicial: float = 0.0, degrau_meia_vida: float = 12.0,
+               **overrides) -> Praca:
+    """Monta uma praça a partir de observáveis públicos e de um template de tipo.
+
+    Entradas (todas de fontes públicas):
+        preco_m2                    FipeZap / Sinduscon regional (R$/m² de lançamento)
+        renda_domiciliar_mediana    Censo 2022 / PNAD (R$/mês)
+        domicilios                  Censo 2022 (domicílios particulares ocupados)
+        crescimento_domicilios_aa   fração ao ano (Censo 2010 -> 2022, ou projeção IBGE)
+        degrau_inicial              demanda de evento ainda não absorvida (unidades)
+
+    Derivação (heurísticas do template, todas sobrescritíveis por `overrides`):
+        renda_comprador     = mult_renda x renda mediana   (comprador marginal de imóvel novo
+                              está bem acima da mediana; 3x no interior, 6x em praça de investidor)
+        demanda_base_mensal = domicilios x crescimento x share_novos / 12
+                              (fração da formação de domicílios atendida por imóvel novo)
+        lancamentos_externos_mensal = demanda_base x fator_externos
+        estoque_inicial     = (demanda_base + absorção inicial do degrau) x meses_estoque_alvo
+
+    O que NÃO vem de dado público e você deve calibrar: estoque real (Abrainc só
+    cobre capitais), VSO efetiva, e a renda do comprador marginal. Trate a saída
+    como ponto de partida, não como calibração.
+    """
+    if tipo not in TEMPLATES:
+        raise KeyError(f"tipo desconhecido: {tipo!r}. Use um de {list(TEMPLATES)}")
+    tpl = {k: v for k, v in TEMPLATES[tipo].items() if k != "derivacao"}
+    der = TEMPLATES[tipo]["derivacao"]
+    meses_alvo = overrides.get("meses_estoque_alvo", tpl["meses_estoque_alvo"])
+    demanda = domicilios * crescimento_domicilios_aa * der["share_novos"] / 12
+    absorcao0 = degrau_inicial * (1 - 0.5 ** (1 / degrau_meia_vida))
+    params = dict(
+        nome=nome, preco_m2=float(preco_m2),
+        metragem_media=der["metragem_media"],
+        renda_comprador=der["mult_renda"] * renda_domiciliar_mediana,
+        demanda_base_mensal=demanda,
+        estoque_inicial=(demanda + absorcao0) * meses_alvo,
+        lancamentos_externos_mensal=demanda * der["fator_externos"],
+        degrau_inicial=degrau_inicial, degrau_meia_vida=degrau_meia_vida,
+        **tpl,
     )
+    params.update(overrides)
+    _valida_campos(params, f"from_dados({nome})")
+    return Praca(**params)
+
+
+def from_toml(path: str | pathlib.Path) -> Praca:
+    """Carrega uma praça de um TOML.
+
+    Duas formas:
+      - campos diretos do dataclass (`preco_m2 = 8103.0`, ...), ou
+      - `tipo = "interior"` + tabela `[dados]` com as entradas de `from_dados`;
+        campos soltos fora de `[dados]` viram overrides.
+    """
+    path = pathlib.Path(path)
+    with open(path, "rb") as f:
+        cfg = tomllib.load(f)
+    cfg.pop("ordem", None)  # só afeta a ordem em carregar_pracas
+    cfg.setdefault("nome", path.stem)
+    if "dados" in cfg:
+        dados = cfg.pop("dados")
+        tipo = cfg.pop("tipo")
+        nome = cfg.pop("nome")
+        return from_dados(nome, tipo, **dados, **cfg)
+    _valida_campos(cfg, str(path))
+    return Praca(**cfg)
+
+
+def carregar_pracas(diretorio: str | pathlib.Path = PRACAS_DIR) -> dict:
+    """{stem: factory} para cada *.toml do diretório, na ordem do campo opcional
+    `ordem` (depois por nome). Factory devolve instância nova a cada chamada."""
+    arquivos = []
+    for f in pathlib.Path(diretorio).glob("*.toml"):
+        with open(f, "rb") as fh:
+            ordem = tomllib.load(fh).get("ordem", 1_000)
+        arquivos.append((ordem, f.stem, f))
+    return {stem: (lambda p=f: from_toml(p)) for _, stem, f in sorted(arquivos)}
+
+
+PRACAS = carregar_pracas()
+
+
+def praca(spec):
+    """Resolve uma especificação de praça para um factory() -> Praca nova.
+
+    Aceita: nome em PRACAS ("lajeado"), caminho para .toml, uma instância de
+    Praca (é copiada limpa a cada chamada) ou um callable sem argumentos."""
+    if isinstance(spec, Praca):
+        return lambda: replace(spec)
+    if callable(spec):
+        return spec
+    if spec in PRACAS:
+        return PRACAS[spec]
+    p = pathlib.Path(str(spec))
+    if p.suffix == ".toml" and p.exists():
+        return lambda: from_toml(p)
+    raise KeyError(f"praça desconhecida: {spec!r}. Use um de {list(PRACAS)} ou um caminho .toml")
+
+
+def lajeado() -> Praca:
+    return PRACAS["lajeado"]()
 
 
 def balneario_camboriu() -> Praca:
-    return Praca(
-        nome="Balneario Camboriu",
-        preco_m2=15_343.0,           # FipeZap set/2026
-        metragem_media=85.0,
-        renda_comprador=35_000.0,    # comprador de fora, alta renda
-        share_financiado=0.30,
-        demanda_base_mensal=90.0,
-        estoque_inicial=1_600.0,     # ~18 meses (torres longas)
-        lancamentos_externos_mensal=80.0,
-        degrau_inicial=0.0,
-        sens_cdi=6.0,                # investidor compara com CDI
-        cdi_ref=10.0,
-        meses_estoque_alvo=15.0,
-        alpha_up=0.005,
-        alpha_down=0.005,            # mais liquidez, desconto aparece
-    )
-
-
-PRACAS = {"lajeado": lajeado, "balneario_camboriu": balneario_camboriu}
+    return PRACAS["balneario_camboriu"]()

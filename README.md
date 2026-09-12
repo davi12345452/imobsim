@@ -71,7 +71,10 @@ está em [`docs/resumo_grade.csv`](docs/resumo_grade.csv).
 ```
 imobsim/macro.py          Selic, taxa SBPE, INCC, CDI (séries mensais exógenas)
 imobsim/praca.py          demanda (fluxo base + degrau de evento), capacidade de
-                          compra, estoque, preço com histerese, confiança
+                          compra, estoque, preço com histerese, confiança;
+                          templates por tipo de praça e derivação de observáveis
+imobsim/pracas/*.toml     praças prontas (lajeado, balneario_camboriu)
+exemplos/*.toml           praça derivada de dados públicos, para copiar
 imobsim/incorporadora.py  obras, caixa (pool ou afetação), plano empresário,
                           repasse/distrato, política de lançamento
 imobsim/sim.py            loop mensal, grade de cenários, fronteiras
@@ -147,7 +150,7 @@ antes do que o cenário Focus atual. Não é "o que aconteceu em Lajeado em
 
 ## Rodar
 
-Requer Python ≥ 3.10.
+Requer Python ≥ 3.11.
 
 ```bash
 # com uv
@@ -163,7 +166,8 @@ python run.py --meses 48 --out out
 
 Roda em ~2 s e escreve `resumo_grade.csv` e cinco PNGs em `./out`
 (ignorado pelo git; as figuras do README ficam em `docs/`). `--macros`
-troca os cenários (ver "Qualquer momento" acima).
+troca os cenários e `--pracas` as praças (ver as seções "Qualquer momento"
+e "Qualquer cidade" acima).
 
 Em notebook ou script:
 
@@ -187,6 +191,66 @@ uv pip install -e ".[dev]"
 pytest
 ruff check .
 ```
+
+### Qualquer cidade: praça por arquivo
+
+Uma praça é um TOML. Duas formas:
+
+```toml
+# forma direta: os campos do dataclass Praca (é como lajeado.toml está escrito)
+nome = "Lajeado"
+preco_m2 = 8103.0
+renda_comprador = 13500.0
+demanda_base_mensal = 17.0
+estoque_inicial = 310.0
+# ...
+
+# forma derivada: um tipo de praça + observáveis públicos (exemplos/cidade_exemplo.toml)
+nome = "Cidade Exemplo"
+tipo = "interior"                  # interior | litoral_investidor | metropole
+[dados]
+preco_m2 = 7200.0                  # FipeZap ou Sinduscon regional
+renda_domiciliar_mediana = 4200.0  # Censo 2022 / PNAD
+domicilios = 48000                 # Censo 2022
+crescimento_domicilios_aa = 0.015  # Censo 2010 -> 2022 anualizado
+degrau_inicial = 0.0               # demanda de evento (famílias realocadas etc.)
+```
+
+```bash
+python run.py --pracas lajeado exemplos/cidade_exemplo.toml
+python run.py --stress --pracas exemplos/cidade_exemplo.toml
+```
+
+```python
+from imobsim import from_dados, from_toml, run
+p = from_dados("Minha cidade", "interior", preco_m2=7200, renda_domiciliar_mediana=4200,
+               domicilios=48_000, crescimento_domicilios_aa=0.015)
+run("focus:2026-09-04", p, "fluxo_dependente")
+run("focus_base", "caminho/para/cidade.toml", "capitalizada")
+```
+
+O **tipo** define qual canal macro morde e como o preço reage:
+
+| Tipo | Comprador | `share_financiado` | `sens_cdi` | estoque-alvo | histerese |
+|---|---|---|---|---|---|
+| `interior` | local, financiado, produto encolhe p/ caber na renda | 0,80 | 1 | 9 meses | alta (ninguém baixa tabela) |
+| `litoral_investidor` | de fora, à vista, compara com CDI | 0,30 | 6 | 15 meses | baixa |
+| `metropole` | misto, mercado líquido | 0,60 | 3 | 12 meses | média |
+
+A **derivação** usa heurísticas do template, todas sobrescritíveis:
+`renda_comprador = mult_renda × renda mediana` (3× no interior, 6× em praça
+de investidor), `demanda_base = domicílios × crescimento × share_novos / 12`
+(fração da formação de domicílios atendida por imóvel novo, ~0,4), estoque
+inicial = demanda × estoque-alvo. Como teste de sanidade: com entradas na
+ordem de grandeza do Censo para Lajeado (≈35 mil domicílios, renda mediana
+≈ R$ 4,5 mil, +1,5% ao ano, 260 famílias realocadas), a derivação devolve
+renda de R$ 13,5 mil, 17,5 vendas/mês e 271 unidades de estoque, contra
+13,5 mil, 17 e 310 calibrados à mão.
+
+O limite honesto: **estoque e velocidade de vendas não existem publicamente
+para cidade pequena.** Abrainc/Fipe cobre capitais. Para o resto, o
+`estoque_inicial` derivado é um regime assumido, não um dado. É o primeiro
+campo a sobrescrever se você tiver qualquer informação local.
 
 ## Stress test com crises históricas
 
@@ -269,7 +333,8 @@ estilizações grosseiras de séries públicas, para ordem de grandeza.
 - Determinístico. Monte Carlo sobre Selic, INCC e degrau é o próximo passo
   natural (usar a dispersão do Focus como prior).
 - Parâmetros de praça são estimativas a partir das fontes acima, não dados
-  primários.
+  primários. A derivação por `from_dados` dá ordem de grandeza; estoque e
+  VSO de cidade pequena continuam sendo premissa.
 
 ## Licença
 
