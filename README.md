@@ -76,7 +76,8 @@ imobsim/incorporadora.py  obras, caixa (pool ou afetação), plano empresário,
                           repasse/distrato, política de lançamento
 imobsim/sim.py            loop mensal, grade de cenários, fronteiras
 imobsim/fontes.py         SGS e Focus (BCB) com snapshot offline em imobsim/dados/
-run.py                    gera CSV + gráficos em ./out
+imobsim/crises.py         episódios históricos (macro + choques) para stress test
+run.py                    gera CSV + gráficos em ./out; --stress roda as crises
 ```
 
 Trocar praça, macro ou arquétipo é trocar um objeto. Lajeado e Balneário
@@ -186,6 +187,58 @@ uv pip install -e ".[dev]"
 pytest
 ruff check .
 ```
+
+## Stress test com crises históricas
+
+O modelo é de mecanismo, então a comparação útil com crises passadas não é
+"ele teria previsto?" e sim **"esta praça e este arquétipo sobreviveriam
+àquele caminho?"**. Cada episódio em `crises.py` é uma trajetória macro
+(observada do SGS quando é brasileira, estilizada de fontes públicas quando
+não é) mais choques datados na praça e no arquétipo: recessão vira
+`renda_comprador × 0,96`, racionamento de crédito vira `entrada_pct × 1,5`,
+linha bancária fechada vira `limite_credito × 0`. Cada episódio carrega o
+mapeamento explícito de mecanismo real → parâmetro do modelo.
+
+```bash
+python run.py --stress        # docs/stress_crises.csv, stress_crises.png, stress_caixa_lajeado.png
+```
+
+```python
+from imobsim import stress, grade_stress, resumo_stress, EPISODIOS
+stress("intermediaria", "lajeado", "espanha_2007_12")          # DataFrame mensal
+stress("intermediaria", "lajeado", "espanha_2007_12", com_choques=False)  # só o macro
+resumo_stress(grade_stress())
+EPISODIOS["china_2021_23"].mecanismo                           # crise real -> parâmetro
+```
+
+![Stress test com crises históricas](docs/stress_crises.png)
+
+| Episódio | Encaixe | Por que entra | O que mais pesa no modelo |
+|---|---|---|---|
+| Encol (1995–99) | forte | o caso que gerou a Lei do Patrimônio de Afetação: caixa único entre ~700 obras | Selic de 25–50% observada no custo do plano empresário e como CDI do investidor |
+| Brasil (2014–17) | forte | Selic 14,25, SBPE a 11%, distratos de ~40% das vendas, PDG/Viver/Rossi em RJ | macro observado + renda × 0,96 (2×), entrada × 1,5, demanda × 0,8 |
+| Espanha (2007–12) | forte | promotoras de pré-venda + crédito bancário; juros caem e a demanda some assim mesmo | demanda × 0,5, entrada × 1,75, renda × 0,85, `limite_credito` × 0,3 |
+| China / Evergrande (2021–23) | forte | pré-venda de um projeto pagando obra de outro; remédio foi escrow por projeto (afetação) | `limite_credito` × 0 por regra, confiança × 0,7, demanda × 0,6 |
+| EUA / subprime (2006–10) | **fraco** | contraste: a quebra foi no crédito ao comprador e na securitização, que o modelo não tem | só a ponta da construtora: demanda × 0,6, `limite_credito` × 0,3 |
+
+Três leituras (parâmetros iniciais, praça de hoje):
+
+1. **A construtora de fluxo quebra entre o mês 15 e o 18 em todos os
+   episódios de encaixe forte, em Lajeado.** Encol com Selic de 40% e China
+   com juros caindo dão o mesmo mês. Reforça a leitura da grade principal: a
+   data da quebra é da estrutura de caixa, não do macro.
+2. **A intermediária sobrevive ao macro puro de Espanha, China e EUA, e quebra
+   quando entram os choques de renda e crédito.** Para quem tem afetação, o
+   que mata não é taxa de juros, é o comprador sumir ou o banco fechar a
+   linha.
+3. **Em Balneário Camboriú a Encol mata em 6 meses**, porque a praça é de
+   investidor e o CDI de 50% zera a demanda. A mesma construtora em Lajeado
+   dura 15. Qual canal macro morde a praça importa mais que a crise.
+
+Limite importante: a praça é sempre a de hoje (preço, renda, estoque de
+2026); só o caminho macro e os choques vêm do episódio. Não é "Lajeado em
+2015", é "Lajeado de hoje se 2015 se repetisse". Os choques são
+estilizações grosseiras de séries públicas, para ordem de grandeza.
 
 ## Parâmetros que mais movem o resultado (calibrar primeiro)
 

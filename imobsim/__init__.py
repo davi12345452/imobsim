@@ -3,14 +3,16 @@
 Três eixos independentes (macro, praça, incorporadora) e um loop mensal que
 os combina. Ver README.md para a lógica e os parâmetros.
 """
+from .crises import EPISODIOS, grade_stress, resumo_stress, stress
 from .incorporadora import ARQUETIPOS
 from .macro import CENARIOS, cenario, focus, historico
 from .praca import PRACAS
-from .sim import crescimento_minimo, grade, resumo, run, vso_minima
+from .sim import Choque, crescimento_minimo, grade, resumo, run, vso_minima
 
 __version__ = "0.1.0"
 __all__ = [
     "ARQUETIPOS", "CENARIOS", "PRACAS",
     "run", "grade", "resumo", "vso_minima", "crescimento_minimo",
     "cenario", "historico", "focus",
+    "Choque", "EPISODIOS", "stress", "grade_stress", "resumo_stress",
 ]
