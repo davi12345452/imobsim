@@ -15,12 +15,12 @@ import numpy as np
 import pandas as pd
 
 from .incorporadora import ARQUETIPOS, Incorporadora
-from .macro import CENARIOS
+from .macro import CENARIOS, cenario
 from .praca import PRACAS
 
 
-def _monta(nome_macro: str, nome_praca: str, nome_arq: str, meses: int):
-    macro = CENARIOS[nome_macro](meses)
+def _monta(nome_macro, nome_praca: str, nome_arq: str, meses: int):
+    macro = cenario(nome_macro)(meses)
     praca = PRACAS[nome_praca]()
     arq = ARQUETIPOS[nome_arq](praca.preco * praca.metragem_media)
     return macro, praca, arq
@@ -33,9 +33,12 @@ def _vso_praca(praca, macro_t) -> tuple[float, float]:
     return vso, sa
 
 
-def run(nome_macro: str, nome_praca: str, nome_arq: str, meses: int = 48,
+def run(nome_macro, nome_praca: str, nome_arq: str, meses: int = 48,
         choque_confianca_quebra: float = 0.25) -> pd.DataFrame:
     """Simula uma combinação (macro, praça, arquétipo) por `meses` meses.
+
+    `nome_macro` aceita tudo que `macro.cenario` aceita: "focus_base",
+    "historico:2014-01", "focus:2026-09-04", um callable ou um DataFrame.
 
     Quando a construtora quebra, a praça recebe um choque único de confiança
     (`choque_confianca_quebra`): obra parada na cidade afeta a demanda de todos.
@@ -59,15 +62,17 @@ def run(nome_macro: str, nome_praca: str, nome_arq: str, meses: int = 48,
                        **{f"praca_{k}": v for k, v in r_pr.items()},
                        **{f"inc_{k}": v for k, v in r_inc.items()}})
     df = pd.DataFrame(linhas)
-    df.attrs.update(macro=nome_macro, praca=nome_praca, arq=nome_arq,
-                    insolvente_em=inc.insolvente_em)
+    df.attrs.update(macro=macro.attrs.get("nome", str(nome_macro)), praca=nome_praca,
+                    arq=nome_arq, insolvente_em=inc.insolvente_em)
     return df
 
 
-def grade(meses: int = 48, macros: Iterable[str] | None = None,
+def grade(meses: int = 48, macros: Iterable | None = None,
           pracas: Iterable[str] | None = None,
           arqs: Iterable[str] | None = None) -> dict[tuple, pd.DataFrame]:
-    """Roda todas as combinações de macro x praça x arquétipo."""
+    """Roda todas as combinações de macro x praça x arquétipo.
+
+    `macros` aceita especificações de `macro.cenario` (strings, callables)."""
     macros = list(macros) if macros else list(CENARIOS)
     pracas = list(pracas) if pracas else list(PRACAS)
     arqs = list(arqs) if arqs else list(ARQUETIPOS)
@@ -97,7 +102,7 @@ def resumo(res: dict[tuple, pd.DataFrame]) -> pd.DataFrame:
 # Fronteiras: varre um parâmetro do arquétipo e acha o menor valor que sobrevive
 # ---------------------------------------------------------------------------
 
-def _fronteira(param: str, grid: np.ndarray, nome_macro: str, nome_praca: str,
+def _fronteira(param: str, grid: np.ndarray, nome_macro, nome_praca: str,
                nome_arq: str, meses: int) -> dict:
     """Para cada valor de `grid`, seta `arq.<param>` e devolve o mês da insolvência
     (None = sobreviveu). Sem choque de confiança: a fronteira é da construtora
@@ -121,7 +126,7 @@ def _fronteira(param: str, grid: np.ndarray, nome_macro: str, nome_praca: str,
     return dict(minimo=min(sobrevive) if sobrevive else None, detalhe=detalhe)
 
 
-def vso_minima(nome_macro: str, nome_praca: str, nome_arq: str = "fluxo_dependente",
+def vso_minima(nome_macro, nome_praca: str, nome_arq: str = "fluxo_dependente",
                meses: int = 48, grid=None) -> dict:
     """Menor velocidade de vendas relativa à praça (`fator_vendas`) com a qual a
     construtora sobrevive o horizonte. Responde: quanto acima do mercado a
@@ -130,7 +135,7 @@ def vso_minima(nome_macro: str, nome_praca: str, nome_arq: str = "fluxo_dependen
     return _fronteira("fator_vendas", grid, nome_macro, nome_praca, nome_arq, meses)
 
 
-def crescimento_minimo(nome_macro: str, nome_praca: str, nome_arq: str = "fluxo_dependente",
+def crescimento_minimo(nome_macro, nome_praca: str, nome_arq: str = "fluxo_dependente",
                        meses: int = 48, grid=None) -> dict:
     """Menor fator de crescimento de lançamentos (`crescimento_lanc`) com o qual
     a construtora sobrevive o horizonte: quanto o próximo lançamento precisa
