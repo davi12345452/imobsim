@@ -75,6 +75,7 @@ imobsim/praca.py          demanda (fluxo base + degrau de evento), capacidade de
 imobsim/incorporadora.py  obras, caixa (pool ou afetação), plano empresário,
                           repasse/distrato, política de lançamento
 imobsim/sim.py            loop mensal, grade de cenários, fronteiras
+imobsim/fontes.py         SGS e Focus (BCB) com snapshot offline em imobsim/dados/
 run.py                    gera CSV + gráficos em ./out
 ```
 
@@ -112,6 +113,37 @@ oportunidade do investidor.
 A taxa SBPE segue `5 + 0,55 × Selic` (aproximação histórica) e o CDI é
 igualado à Selic.
 
+### Qualquer momento: cenários a partir de dados
+
+Além dos três cenários estilizados, o macro pode vir direto do Banco Central.
+O pacote carrega um snapshot de séries mensais do SGS desde jul/1994 (Selic
+4189, INCC-DI 192, IPCA 433, taxa média SBPE regulada 20774) e da última
+divulgação Focus, então tudo roda offline; `python -m imobsim.fontes`
+atualiza o snapshot.
+
+| Especificação | O que faz |
+|---|---|
+| `historico:2014-01` | usa as séries observadas a partir de jan/2014; SBPE observada de mar/2011 em diante e a regra antes disso |
+| `focus:2026-09-04` | mediana Focus daquela data (Selic e IPCA por ano), interpolada a partir da Selic e da SBPE observadas naquele mês; INCC = IPCA + 1,5 p.p. |
+
+Qualquer função que recebe um cenário aceita essas strings, um callable ou
+um DataFrame pronto:
+
+```bash
+python run.py --macros historico:2014-01 historico:2016-01 focus:2026-09-04
+```
+
+```python
+from imobsim import run, historico, focus
+run("historico:2014-01", "lajeado", "fluxo_dependente")   # o macro real de 2014-17
+focus("2026-09-04")                                       # DataFrame do cenário Focus
+```
+
+Rodar a praça de Lajeado sob o macro observado de 2014 a 2017 (Selic subindo
+a 14,25 e SBPE a 11%) quebra a construtora de fluxo em jul/2015, nove meses
+antes do que o cenário Focus atual. Não é "o que aconteceu em Lajeado em
+2015": é a praça de hoje sob aquele macro.
+
 ## Rodar
 
 Requer Python ≥ 3.10.
@@ -129,7 +161,8 @@ python run.py --meses 48 --out out
 ```
 
 Roda em ~2 s e escreve `resumo_grade.csv` e cinco PNGs em `./out`
-(ignorado pelo git; as figuras do README ficam em `docs/`).
+(ignorado pelo git; as figuras do README ficam em `docs/`). `--macros`
+troca os cenários (ver "Qualquer momento" acima).
 
 Em notebook ou script:
 
